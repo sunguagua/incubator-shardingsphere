@@ -19,11 +19,11 @@ package org.apache.shardingsphere.core.route.type.unicast;
 
 import com.google.common.collect.Sets;
 import lombok.RequiredArgsConstructor;
-import org.apache.shardingsphere.core.exception.ShardingConfigurationException;
+import org.apache.shardingsphere.core.config.ShardingConfigurationException;
 import org.apache.shardingsphere.core.route.type.RoutingEngine;
 import org.apache.shardingsphere.core.route.type.RoutingResult;
-import org.apache.shardingsphere.core.route.type.TableUnit;
 import org.apache.shardingsphere.core.route.type.RoutingUnit;
+import org.apache.shardingsphere.core.route.type.TableUnit;
 import org.apache.shardingsphere.core.rule.DataNode;
 import org.apache.shardingsphere.core.rule.ShardingRule;
 import org.apache.shardingsphere.core.rule.TableRule;
@@ -62,6 +62,10 @@ public final class UnicastRoutingEngine implements RoutingEngine {
             result.getRoutingUnits().add(new RoutingUnit(shardingRule.getShardingDataSourceNames().getRandomDataSourceName()));
         } else if (1 == logicTables.size()) {
             String logicTableName = logicTables.iterator().next();
+            if (!shardingRule.findTableRule(logicTableName).isPresent()) {
+                result.getRoutingUnits().add(new RoutingUnit(shardingRule.getShardingDataSourceNames().getRandomDataSourceName()));
+                return result;
+            }
             DataNode dataNode = shardingRule.getDataNode(logicTableName);
             RoutingUnit routingUnit = new RoutingUnit(dataNode.getDataSourceName());
             routingUnit.getTableUnits().add(new TableUnit(logicTableName, dataNode.getTableName()));

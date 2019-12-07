@@ -17,12 +17,13 @@
 
 package org.apache.shardingsphere.core.route.type.broadcast;
 
+import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import lombok.RequiredArgsConstructor;
-import org.apache.shardingsphere.core.parse.sql.statement.SQLStatement;
-import org.apache.shardingsphere.core.parse.sql.statement.ddl.DDLStatement;
-import org.apache.shardingsphere.core.parse.sql.token.SQLToken;
-import org.apache.shardingsphere.core.parse.sql.token.impl.IndexToken;
+import org.apache.shardingsphere.core.metadata.table.TableMetas;
+import org.apache.shardingsphere.sql.parser.relation.statement.SQLStatementContext;
+import org.apache.shardingsphere.sql.parser.sql.segment.ddl.index.IndexSegment;
+import org.apache.shardingsphere.sql.parser.sql.statement.ddl.DropIndexStatement;
 import org.apache.shardingsphere.core.route.type.RoutingEngine;
 import org.apache.shardingsphere.core.route.type.RoutingResult;
 import org.apache.shardingsphere.core.route.type.RoutingUnit;
@@ -32,9 +33,7 @@ import org.apache.shardingsphere.core.rule.ShardingRule;
 import org.apache.shardingsphere.core.rule.TableRule;
 
 import java.util.Collection;
-import java.util.Collections;
 import java.util.LinkedList;
-import java.util.List;
 
 /**
  * Broadcast routing engine for tables.
@@ -48,7 +47,9 @@ public final class TableBroadcastRoutingEngine implements RoutingEngine {
     
     private final ShardingRule shardingRule;
     
-    private final SQLStatement sqlStatement;
+    private final TableMetas tableMetas;
+    
+    private final SQLStatementContext sqlStatementContext;
     
     @Override
     public RoutingResult route() {
@@ -60,21 +61,27 @@ public final class TableBroadcastRoutingEngine implements RoutingEngine {
     }
     
     private Collection<String> getLogicTableNames() {
-        if (isOperateIndexWithoutTable()) {
-            String indexName = sqlStatement.getLogicSQL().substring(getIndexToken().getStartIndex(), getIndexToken().getStopIndex() + 1);
-            return Collections.singletonList(shardingRule.getLogicTableName(indexName));
+        return sqlStatementContext.getSqlStatement() instanceof DropIndexStatement && !((DropIndexStatement) sqlStatementContext.getSqlStatement()).getIndexes().isEmpty()
+                ? getTableNamesFromMetaData((DropIndexStatement) sqlStatementContext.getSqlStatement()) : sqlStatementContext.getTablesContext().getTableNames();
+    }
+    
+    private Collection<String> getTableNamesFromMetaData(final DropIndexStatement dropIndexStatement) {
+        Collection<String> result = new LinkedList<>();
+        for (IndexSegment each : dropIndexStatement.getIndexes()) {
+            Optional<String> tableName = findLogicTableNameFromMetaData(each.getName());
+            Preconditions.checkState(tableName.isPresent(), "Cannot find index name `%s`.", each.getName());
+            result.add(tableName.get());
         }
-        return sqlStatement.getTables().getTableNames();
+        return result;
     }
     
-    private boolean isOperateIndexWithoutTable() {
-        return sqlStatement instanceof DDLStatement && sqlStatement.getTables().isEmpty();
-    }
-    
-    private IndexToken getIndexToken() {
-        List<SQLToken> sqlTokens = sqlStatement.getSQLTokens();
-        Preconditions.checkState(1 == sqlTokens.size());
-        return (IndexToken) sqlTokens.get(0);
+    private Optional<String> findLogicTableNameFromMetaData(final String logicIndexName) {
+        for (String each : tableMetas.getAllTableNames()) {
+            if (tableMetas.get(each).containsIndex(logicIndexName)) {
+                return Optional.of(each);
+            }
+        }
+        return Optional.absent();
     }
     
     private Collection<RoutingUnit> getAllRoutingUnits(final String logicTableName) {

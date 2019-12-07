@@ -19,13 +19,14 @@ package org.apache.shardingsphere.shardingproxy.backend.schema;
 
 import com.google.common.eventbus.Subscribe;
 import lombok.Getter;
+import org.apache.shardingsphere.core.config.DatabaseAccessConfiguration;
 import org.apache.shardingsphere.core.constant.properties.ShardingProperties;
 import org.apache.shardingsphere.core.constant.properties.ShardingPropertiesConstant;
+import org.apache.shardingsphere.core.database.DatabaseTypes;
 import org.apache.shardingsphere.core.execute.metadata.TableMetaDataInitializer;
-import org.apache.shardingsphere.core.metadata.ShardingMetaData;
-import org.apache.shardingsphere.core.metadata.datasource.ShardingDataSourceMetaData;
-import org.apache.shardingsphere.core.parse.cache.ParsingResultCache;
-import org.apache.shardingsphere.core.parse.sql.statement.SQLStatement;
+import org.apache.shardingsphere.core.metadata.ShardingSphereMetaData;
+import org.apache.shardingsphere.core.metadata.datasource.DataSourceMetas;
+import org.apache.shardingsphere.core.rule.ShardingRule;
 import org.apache.shardingsphere.orchestration.internal.eventbus.ShardingOrchestrationEventBus;
 import org.apache.shardingsphere.orchestration.internal.registry.config.event.DataSourceChangedEvent;
 import org.apache.shardingsphere.shardingproxy.backend.communication.jdbc.datasource.JDBCBackendDataSource;
@@ -33,8 +34,12 @@ import org.apache.shardingsphere.shardingproxy.backend.executor.BackendExecutorC
 import org.apache.shardingsphere.shardingproxy.config.yaml.YamlDataSourceParameter;
 import org.apache.shardingsphere.shardingproxy.context.ShardingProxyContext;
 import org.apache.shardingsphere.shardingproxy.util.DataSourceConverter;
+import org.apache.shardingsphere.sql.parser.SQLParseEngine;
+import org.apache.shardingsphere.sql.parser.SQLParseEngineFactory;
+import org.apache.shardingsphere.sql.parser.relation.statement.SQLStatementContext;
 
-import java.util.LinkedHashMap;
+import java.sql.SQLException;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Map.Entry;
 
@@ -48,18 +53,25 @@ public abstract class LogicSchema {
     
     private final String name;
     
-    private final Map<String, YamlDataSourceParameter> dataSources;
-    
-    private final ParsingResultCache parsingResultCache;
+    private final SQLParseEngine parseEngine;
     
     private JDBCBackendDataSource backendDataSource;
     
     public LogicSchema(final String name, final Map<String, YamlDataSourceParameter> dataSources) {
         this.name = name;
-        this.dataSources = dataSources;
-        parsingResultCache = new ParsingResultCache();
+        parseEngine = SQLParseEngineFactory.getSQLParseEngine(DatabaseTypes.getDatabaseTypeName(LogicSchemas.getInstance().getDatabaseType()));
         backendDataSource = new JDBCBackendDataSource(dataSources);
         ShardingOrchestrationEventBus.getInstance().register(this);
+    }
+    
+    protected final Map<String, DatabaseAccessConfiguration> getDatabaseAccessConfigurationMap() {
+        Map<String, DatabaseAccessConfiguration> result = new HashMap<>(backendDataSource.getDataSourceParameters().size(), 1);
+        for (Entry<String, YamlDataSourceParameter> entry : backendDataSource.getDataSourceParameters().entrySet()) {
+            YamlDataSourceParameter dataSource = entry.getValue();
+            DatabaseAccessConfiguration dataSourceInfo = new DatabaseAccessConfiguration(dataSource.getUrl(), null, null);
+            result.put(entry.getKey(), dataSourceInfo);
+        }
+        return result;
     }
     
     /**
@@ -67,20 +79,29 @@ public abstract class LogicSchema {
      * 
      * @return sharding meta data.
      */
-    public abstract ShardingMetaData getMetaData();
+    public abstract ShardingSphereMetaData getMetaData();
     
-    protected final Map<String, String> getDataSourceURLs(final Map<String, YamlDataSourceParameter> dataSourceParameters) {
-        Map<String, String> result = new LinkedHashMap<>(dataSourceParameters.size(), 1);
-        for (Entry<String, YamlDataSourceParameter> entry : dataSourceParameters.entrySet()) {
-            result.put(entry.getKey(), entry.getValue().getUrl());
-        }
-        return result;
+    /**
+     * Get Sharding rule.
+     * 
+     * @return sharding rule
+     */
+    // TODO : It is used in many places, but we can consider how to optimize it because of being irrational for logic schema.
+    public abstract ShardingRule getShardingRule();
+    
+    /**
+     * Get data source parameters.
+     * 
+     * @return data source parameters
+     */
+    public Map<String, YamlDataSourceParameter> getDataSources() {
+        return backendDataSource.getDataSourceParameters();
     }
     
-    protected final TableMetaDataInitializer getTableMetaDataInitializer(final ShardingDataSourceMetaData shardingDataSourceMetaData) {
+    protected final TableMetaDataInitializer getTableMetaDataInitializer(final DataSourceMetas dataSourceMetas) {
         ShardingProperties shardingProperties = ShardingProxyContext.getInstance().getShardingProperties();
         return new TableMetaDataInitializer(
-                shardingDataSourceMetaData, BackendExecutorContext.getInstance().getExecuteEngine(), new ProxyTableMetaDataConnectionManager(getBackendDataSource()),
+                dataSourceMetas, BackendExecutorContext.getInstance().getExecuteEngine(), new ProxyTableMetaDataConnectionManager(getBackendDataSource()),
                 shardingProperties.<Integer>getValue(ShardingPropertiesConstant.MAX_CONNECTIONS_SIZE_PER_QUERY),
                 shardingProperties.<Boolean>getValue(ShardingPropertiesConstant.CHECK_TABLE_METADATA_ENABLED));
     }
@@ -96,17 +117,15 @@ public abstract class LogicSchema {
         if (!name.equals(dataSourceChangedEvent.getShardingSchemaName())) {
             return;
         }
-        backendDataSource.close();
-        dataSources.clear();
-        dataSources.putAll(DataSourceConverter.getDataSourceParameterMap(dataSourceChangedEvent.getDataSourceConfigurations()));
-        backendDataSource = new JDBCBackendDataSource(dataSources);
+        backendDataSource.renew(DataSourceConverter.getDataSourceParameterMap(dataSourceChangedEvent.getDataSourceConfigurations()));
     }
     
     /**
      * Refresh table meta data.
      * 
-     * @param sqlStatement SQL statement
+     * @param sqlStatementContext SQL statement context
+     * @throws SQLException SQL exception
      */
-    public void refreshTableMetaData(final SQLStatement sqlStatement) {
+    public void refreshTableMetaData(final SQLStatementContext sqlStatementContext) throws SQLException {
     }
 }

@@ -19,13 +19,12 @@ package org.apache.shardingsphere.core.merge.dal.show;
 
 import org.apache.shardingsphere.core.execute.sql.execute.result.QueryResult;
 import org.apache.shardingsphere.core.merge.dql.common.MemoryQueryResultRow;
-import org.apache.shardingsphere.core.metadata.table.ShardingTableMetaData;
+import org.apache.shardingsphere.core.metadata.table.TableMetas;
 import org.apache.shardingsphere.core.rule.ShardingRule;
+import org.apache.shardingsphere.sql.parser.relation.statement.SQLStatementContext;
 
 import java.sql.SQLException;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Merged result for show create table.
@@ -34,17 +33,12 @@ import java.util.Map;
  */
 public final class ShowCreateTableMergedResult extends LogicTablesMergedResult {
     
-    private static final Map<String, Integer> LABEL_AND_INDEX_MAP = new HashMap<>(2, 1);
-    
-    static {
-        LABEL_AND_INDEX_MAP.put("Table", 1);
-        LABEL_AND_INDEX_MAP.put("Create Table", 2);
+    public ShowCreateTableMergedResult(final ShardingRule shardingRule, 
+                                       final SQLStatementContext sqlStatementContext, final TableMetas tableMetas, final List<QueryResult> queryResults) throws SQLException {
+        super(shardingRule, sqlStatementContext, tableMetas, queryResults);
     }
     
-    public ShowCreateTableMergedResult(final ShardingRule shardingRule, final List<QueryResult> queryResults, final ShardingTableMetaData shardingTableMetaData) throws SQLException {
-        super(LABEL_AND_INDEX_MAP, shardingRule, queryResults, shardingTableMetaData);
-    }
-    
+    @Override
     protected void setCellValue(final MemoryQueryResultRow memoryResultSetRow, final String logicTableName, final String actualTableName) {
         memoryResultSetRow.setCell(2, memoryResultSetRow.getCell(2).toString().replaceFirst(actualTableName, logicTableName));
     }

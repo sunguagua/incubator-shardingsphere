@@ -17,13 +17,13 @@
 
 package org.apache.shardingsphere.core.route;
 
+import com.google.common.base.Optional;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
-import org.apache.shardingsphere.core.optimize.GeneratedKey;
-import org.apache.shardingsphere.core.optimize.result.OptimizeResult;
-import org.apache.shardingsphere.core.parse.sql.context.limit.Limit;
-import org.apache.shardingsphere.core.parse.sql.statement.SQLStatement;
+import org.apache.shardingsphere.sql.parser.relation.statement.SQLStatementContext;
+import org.apache.shardingsphere.core.route.router.sharding.condition.ShardingConditions;
+import org.apache.shardingsphere.core.route.router.sharding.keygen.GeneratedKey;
 import org.apache.shardingsphere.core.route.type.RoutingResult;
 
 import java.util.Collection;
@@ -41,21 +41,26 @@ import java.util.LinkedHashSet;
 @Setter
 public final class SQLRouteResult {
     
-    private final SQLStatement sqlStatement;
+    private final SQLStatementContext sqlStatementContext;
+    
+    private final ShardingConditions shardingConditions;
     
     private final GeneratedKey generatedKey;
     
-    // For multiple thread read cached sqlStatement, clone limit on SQLRouteResult, because limit will be modified after cache
-    // TODO need more good design here
-    private Limit limit;
+    private final Collection<RouteUnit> routeUnits = new LinkedHashSet<>();
     
     private RoutingResult routingResult;
     
-    private OptimizeResult optimizeResult;
+    public SQLRouteResult(final SQLStatementContext sqlStatementContext, final ShardingConditions shardingConditions) {
+        this(sqlStatementContext, shardingConditions, null);
+    }
     
-    private final Collection<RouteUnit> routeUnits = new LinkedHashSet<>();
-    
-    public SQLRouteResult(final SQLStatement sqlStatement) {
-        this(sqlStatement, null);
+    /**
+     * Get generated key.
+     * 
+     * @return generated key
+     */
+    public Optional<GeneratedKey> getGeneratedKey() {
+        return Optional.fromNullable(generatedKey);
     }
 }

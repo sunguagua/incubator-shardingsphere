@@ -17,6 +17,8 @@
 
 package org.apache.shardingsphere.core.rule;
 
+import org.apache.shardingsphere.api.config.RuleConfiguration;
+
 /**
  * Base rule.
  *
@@ -26,10 +28,9 @@ package org.apache.shardingsphere.core.rule;
 public interface BaseRule {
     
     /**
-     * Get actual data source name.
-     *
-     * @param actualTableName actual table name
-     * @return actual data source name
+     * Get rule configuration.
+     * 
+     * @return rule configuration
      */
-    String getActualDataSourceName(String actualTableName);
+    RuleConfiguration getRuleConfiguration();
 }

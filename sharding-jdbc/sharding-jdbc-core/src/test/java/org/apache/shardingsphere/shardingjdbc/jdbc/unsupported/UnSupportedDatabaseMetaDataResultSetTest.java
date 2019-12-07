@@ -17,7 +17,6 @@
 
 package org.apache.shardingsphere.shardingjdbc.jdbc.unsupported;
 
-import lombok.SneakyThrows;
 import org.apache.shardingsphere.shardingjdbc.jdbc.core.resultset.DatabaseMetaDataResultSet;
 import org.junit.Before;
 import org.junit.Test;
@@ -30,13 +29,12 @@ import java.sql.SQLFeatureNotSupportedException;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-public class UnSupportedDatabaseMetaDataResultSetTest {
+public final class UnSupportedDatabaseMetaDataResultSetTest {
     
     private DatabaseMetaDataResultSet databaseMetaDataResultSet;
     
     @Before
-    @SneakyThrows
-    public void setUp() {
+    public void setUp() throws SQLException {
         ResultSet resultSet = mock(ResultSet.class);
         ResultSetMetaData resultSetMetaData = mock(ResultSetMetaData.class);
         when(resultSet.getMetaData()).thenReturn(resultSetMetaData);

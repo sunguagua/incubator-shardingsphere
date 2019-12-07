@@ -17,104 +17,64 @@
 
 package org.apache.shardingsphere.core.route.type.standard;
 
-import org.apache.shardingsphere.api.config.sharding.ShardingRuleConfiguration;
-import org.apache.shardingsphere.api.config.sharding.TableRuleConfiguration;
-import org.apache.shardingsphere.api.config.sharding.strategy.HintShardingStrategyConfiguration;
-import org.apache.shardingsphere.api.config.sharding.strategy.InlineShardingStrategyConfiguration;
-import org.apache.shardingsphere.core.constant.DatabaseType;
-import org.apache.shardingsphere.core.metadata.ShardingMetaData;
-import org.apache.shardingsphere.core.metadata.datasource.ShardingDataSourceMetaData;
-import org.apache.shardingsphere.core.metadata.table.ColumnMetaData;
-import org.apache.shardingsphere.core.metadata.table.ShardingTableMetaData;
+import org.apache.shardingsphere.core.config.DatabaseAccessConfiguration;
+import org.apache.shardingsphere.core.database.DatabaseTypes;
+import org.apache.shardingsphere.core.metadata.ShardingSphereMetaData;
+import org.apache.shardingsphere.core.metadata.column.ColumnMetaData;
+import org.apache.shardingsphere.core.metadata.datasource.DataSourceMetas;
 import org.apache.shardingsphere.core.metadata.table.TableMetaData;
-import org.apache.shardingsphere.core.parse.cache.ParsingResultCache;
+import org.apache.shardingsphere.core.metadata.table.TableMetas;
 import org.apache.shardingsphere.core.route.PreparedStatementRoutingEngine;
 import org.apache.shardingsphere.core.route.SQLRouteResult;
-import org.apache.shardingsphere.core.route.fixture.HintShardingAlgorithmFixture;
+import org.apache.shardingsphere.core.route.fixture.AbstractRoutingEngineTest;
 import org.apache.shardingsphere.core.rule.ShardingRule;
+import org.apache.shardingsphere.sql.parser.SQLParseEngine;
+import org.apache.shardingsphere.sql.parser.SQLParseEngineFactory;
 
 import java.util.Arrays;
-import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
 
-public class AbstractSQLRouteTest {
+public abstract class AbstractSQLRouteTest extends AbstractRoutingEngineTest {
     
-    protected SQLRouteResult assertRoute(final String sql, final List<Object> parameters) {
-        ShardingRule shardingRule = createShardingRule();
-        ShardingMetaData shardingMetaData = new ShardingMetaData(buildShardingDataSourceMetaData(), buildShardingTableMetaData());
-        PreparedStatementRoutingEngine engine = new PreparedStatementRoutingEngine(sql, shardingRule, shardingMetaData, DatabaseType.MySQL, new ParsingResultCache());
+    protected final SQLRouteResult assertRoute(final String sql, final List<Object> parameters) {
+        ShardingRule shardingRule = createAllShardingRule();
+        ShardingSphereMetaData metaData = new ShardingSphereMetaData(buildDataSourceMetas(), buildTableMetas());
+        SQLParseEngine parseEngine = SQLParseEngineFactory.getSQLParseEngine("MySQL");
+        PreparedStatementRoutingEngine engine = new PreparedStatementRoutingEngine(sql, shardingRule, metaData, parseEngine);
         SQLRouteResult result = engine.route(parameters);
         assertThat(result.getRoutingResult().getRoutingUnits().size(), is(1));
         return result;
     }
     
-    private ShardingDataSourceMetaData buildShardingDataSourceMetaData() {
-        Map<String, String> shardingDataSourceURLs = new LinkedHashMap<>();
-        shardingDataSourceURLs.put("ds_0", "jdbc:mysql://127.0.0.1:3306/actual_db");
-        shardingDataSourceURLs.put("ds_1", "jdbc:mysql://127.0.0.1:3306/actual_db");
-        return new ShardingDataSourceMetaData(shardingDataSourceURLs, createShardingRule(), DatabaseType.MySQL);
+    private DataSourceMetas buildDataSourceMetas() {
+        Map<String, DatabaseAccessConfiguration> dataSourceInfoMap = new HashMap<>();
+        DatabaseAccessConfiguration mainDatabaseAccessConfiguration = new DatabaseAccessConfiguration("jdbc:mysql://127.0.0.1:3306/actual_db", "test", null);
+        DatabaseAccessConfiguration databaseAccessConfiguration0 = new DatabaseAccessConfiguration("jdbc:mysql://127.0.0.1:3306/actual_db", "test", null);
+        DatabaseAccessConfiguration databaseAccessConfiguration1 = new DatabaseAccessConfiguration("jdbc:mysql://127.0.0.1:3306/actual_db", "test", null);
+        dataSourceInfoMap.put("main", mainDatabaseAccessConfiguration);
+        dataSourceInfoMap.put("ds_0", databaseAccessConfiguration0);
+        dataSourceInfoMap.put("ds_1", databaseAccessConfiguration1);
+        return new DataSourceMetas(DatabaseTypes.getActualDatabaseType("MySQL"), dataSourceInfoMap);
     }
     
-    private ShardingRule createShardingRule() {
-        ShardingRuleConfiguration shardingRuleConfig = createShardingRuleConfiguration();
-        addTableRule(shardingRuleConfig, "t_order", "ds_${0..1}.t_order_${0..1}", "user_id", "t_order_${user_id % 2}", "ds_${user_id % 2}");
-        addTableRule(shardingRuleConfig, "t_order_item", "ds_${0..1}.t_order_item_${0..1}", "user_id", "t_order_item_${user_id % 2}", "ds_${user_id % 2}");
-        addTableRule(shardingRuleConfig, "t_user", "ds_${0..1}.t_user_${0..1}", "user_id", "t_user_${user_id % 2}", "ds_${user_id % 2}");
-        addTableRuleWithHint(shardingRuleConfig, "t_hint_test", "ds_${0..1}.t_t_hint_test_${0..1}");
-        shardingRuleConfig.getBindingTableGroups().add("t_order,t_order_item");
-        shardingRuleConfig.setDefaultDataSourceName("main");
-        return new ShardingRule(shardingRuleConfig, createDataSourceNames());
-    }
-    
-    private ShardingRuleConfiguration createShardingRuleConfiguration() {
-        ShardingRuleConfiguration result = new ShardingRuleConfiguration();
-        result.getBroadcastTables().add("t_product");
-        result.setDefaultDatabaseShardingStrategyConfig(new InlineShardingStrategyConfiguration("order_id", "ds_${user_id % 2}"));
-        return result;
-    }
-    
-    private Collection<String> createDataSourceNames() {
-        return Arrays.asList("ds_0", "ds_1", "main");
-    }
-    
-    private void addTableRule(final ShardingRuleConfiguration shardingRuleConfig, final String tableName,
-                                final String actualDataNodes, final String shardingColumn, final String tableAlgorithmExpression, final String dsAlgorithmExpression) {
-        TableRuleConfiguration orderTableRuleConfig = createTableRuleConfig(tableName, actualDataNodes, shardingColumn, tableAlgorithmExpression, dsAlgorithmExpression);
-        shardingRuleConfig.getTableRuleConfigs().add(orderTableRuleConfig);
-    }
-    
-    private TableRuleConfiguration createTableRuleConfig(final String tableName, final String actualDataNodes,
-                                                           final String shardingColumn, final String algorithmExpression, final String dsAlgorithmExpression) {
-        TableRuleConfiguration result = new TableRuleConfiguration(tableName, actualDataNodes);
-        result.setTableShardingStrategyConfig(new InlineShardingStrategyConfiguration(shardingColumn, algorithmExpression));
-        result.setDatabaseShardingStrategyConfig(new InlineShardingStrategyConfiguration(shardingColumn, dsAlgorithmExpression));
-        return result;
-    }
-    
-    private void addTableRuleWithHint(final ShardingRuleConfiguration shardingRuleConfig, final String tableName, final String actualDataNodes) {
-        TableRuleConfiguration orderTableRuleConfig = createTableRuleWithHintConfig(tableName, actualDataNodes);
-        shardingRuleConfig.getTableRuleConfigs().add(orderTableRuleConfig);
-    }
-    
-    private TableRuleConfiguration createTableRuleWithHintConfig(final String tableName, final String actualDataNodes) {
-        TableRuleConfiguration result = new TableRuleConfiguration(tableName, actualDataNodes);
-        result.setTableShardingStrategyConfig(new HintShardingStrategyConfiguration(new HintShardingAlgorithmFixture()));
-        result.setDatabaseShardingStrategyConfig(new HintShardingStrategyConfiguration(new HintShardingAlgorithmFixture()));
-        return result;
-    }
-    
-    private ShardingTableMetaData buildShardingTableMetaData() {
+    private TableMetas buildTableMetas() {
         Map<String, TableMetaData> tableMetaDataMap = new HashMap<>(3, 1);
-        tableMetaDataMap.put("t_order",
-                new TableMetaData(Arrays.asList(new ColumnMetaData("order_id", "int", true), new ColumnMetaData("user_id", "int", false), new ColumnMetaData("status", "int", false))));
-        tableMetaDataMap.put("t_order_item", new TableMetaData(Arrays.asList(new ColumnMetaData("item_id", "int", true), new ColumnMetaData("order_id", "int", false),
-                new ColumnMetaData("user_id", "int", false), new ColumnMetaData("status", "varchar", false), new ColumnMetaData("c_date", "timestamp", false))));
-        return new ShardingTableMetaData(tableMetaDataMap);
+        tableMetaDataMap.put("t_order", new TableMetaData(Arrays.asList(new ColumnMetaData("order_id", "int", true, true, true), 
+                new ColumnMetaData("user_id", "int", false, false, false), 
+                new ColumnMetaData("status", "int", false, false, false)), Collections.<String>emptySet()));
+        tableMetaDataMap.put("t_order_item", new TableMetaData(Arrays.asList(new ColumnMetaData("item_id", "int", true, true, true), 
+                new ColumnMetaData("order_id", "int", false, false, false),
+                new ColumnMetaData("user_id", "int", false, false, false), 
+                new ColumnMetaData("status", "varchar", false, false, false), 
+                new ColumnMetaData("c_date", "timestamp", false, false, false)), Collections.<String>emptySet()));
+        tableMetaDataMap.put("t_other", new TableMetaData(Collections.singletonList(new ColumnMetaData("order_id", "int", true, true, true)), Collections.<String>emptySet()));
+        tableMetaDataMap.put("t_category", new TableMetaData(Collections.singletonList(new ColumnMetaData("order_id", "int", true, true, true)), Collections.<String>emptySet()));
+        return new TableMetas(tableMetaDataMap);
     }
 }

@@ -29,7 +29,8 @@ import io.seata.rm.datasource.DataSourceProxy;
 import io.seata.tm.api.GlobalTransactionContext;
 import lombok.SneakyThrows;
 import org.apache.commons.dbcp2.BasicDataSource;
-import org.apache.shardingsphere.core.constant.DatabaseType;
+import org.apache.shardingsphere.core.database.DatabaseTypes;
+import org.apache.shardingsphere.core.execute.engine.ShardingExecuteDataMap;
 import org.apache.shardingsphere.transaction.core.ResourceDataSource;
 import org.apache.shardingsphere.transaction.core.TransactionType;
 import org.junit.After;
@@ -56,17 +57,17 @@ import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
 
 @RunWith(MockitoJUnitRunner.class)
-public class SeataATShardingTransactionManagerTest {
+public final class SeataATShardingTransactionManagerTest {
     
-    private static MockSeataServer mockSeataServer = new MockSeataServer();
+    private static final MockSeataServer MOCK_SEATA_SERVER = new MockSeataServer();
     
     private final DataSource dataSource = getDataSource();
     
     private final SeataATShardingTransactionManager seataATShardingTransactionManager = new SeataATShardingTransactionManager();
     
-    private Queue<Object> requestQueue = mockSeataServer.getMessageHandler().getRequestQueue();
+    private final Queue<Object> requestQueue = MOCK_SEATA_SERVER.getMessageHandler().getRequestQueue();
     
-    private Queue<Object> responseQueue = mockSeataServer.getMessageHandler().getResponseQueue();
+    private final Queue<Object> responseQueue = MOCK_SEATA_SERVER.getMessageHandler().getResponseQueue();
     
     @BeforeClass
     @SneakyThrows
@@ -74,11 +75,11 @@ public class SeataATShardingTransactionManagerTest {
         Executors.newSingleThreadExecutor().submit(new Runnable() {
             @Override
             public void run() {
-                mockSeataServer.start();
+                MOCK_SEATA_SERVER.start();
             }
         });
         while (true) {
-            if (mockSeataServer.getInitialized().get()) {
+            if (MOCK_SEATA_SERVER.getInitialized().get()) {
                 return;
             }
         }
@@ -86,20 +87,23 @@ public class SeataATShardingTransactionManagerTest {
 
     @AfterClass
     public static void after() {
-        mockSeataServer.shutdown();
+        MOCK_SEATA_SERVER.shutdown();
     }
     
     @Before
     public void setUp() {
-        seataATShardingTransactionManager.init(DatabaseType.MySQL, getResourceDataSources());
+        seataATShardingTransactionManager.init(DatabaseTypes.getActualDatabaseType("MySQL"), getResourceDataSources());
     }
     
     @After
     public void tearDown() {
+        ShardingExecuteDataMap.getDataMap().clear();
         RootContext.unbind();
         SeataTransactionHolder.clear();
         seataATShardingTransactionManager.close();
         releaseRpcClient();
+        requestQueue.clear();
+        responseQueue.clear();
     }
     
     private DataSource getDataSource() {
@@ -132,6 +136,7 @@ public class SeataATShardingTransactionManagerTest {
     @Test
     public void assertBegin() {
         seataATShardingTransactionManager.begin();
+        assertTrue(ShardingExecuteDataMap.getDataMap().containsKey("SEATA_TX_XID"));
         assertTrue(seataATShardingTransactionManager.isInTransaction());
         assertResult();
     }

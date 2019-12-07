@@ -18,63 +18,82 @@
 package org.apache.shardingsphere.core.merge.dal;
 
 import org.apache.shardingsphere.core.execute.sql.execute.result.QueryResult;
+import org.apache.shardingsphere.core.merge.dal.desc.DescribeTableMergedResult;
+import org.apache.shardingsphere.core.merge.dal.show.LogicTablesMergedResult;
 import org.apache.shardingsphere.core.merge.dal.show.ShowCreateTableMergedResult;
 import org.apache.shardingsphere.core.merge.dal.show.ShowDatabasesMergedResult;
 import org.apache.shardingsphere.core.merge.dal.show.ShowOtherMergedResult;
-import org.apache.shardingsphere.core.merge.dal.show.ShowTablesMergedResult;
-import org.apache.shardingsphere.core.merge.fixture.TestQueryResult;
-import org.apache.shardingsphere.core.parse.sql.statement.dal.DALStatement;
-import org.apache.shardingsphere.core.parse.sql.statement.dal.dialect.mysql.statement.ShowCreateTableStatement;
-import org.apache.shardingsphere.core.parse.sql.statement.dal.dialect.mysql.statement.ShowDatabasesStatement;
-import org.apache.shardingsphere.core.parse.sql.statement.dal.dialect.mysql.statement.ShowOtherStatement;
-import org.apache.shardingsphere.core.parse.sql.statement.dal.dialect.mysql.statement.ShowTablesStatement;
+import org.apache.shardingsphere.sql.parser.relation.statement.SQLStatementContext;
+import org.apache.shardingsphere.sql.parser.sql.statement.dal.DALStatement;
+import org.apache.shardingsphere.sql.parser.sql.statement.dal.dialect.mysql.DescribeStatement;
+import org.apache.shardingsphere.sql.parser.sql.statement.dal.dialect.mysql.ShowCreateTableStatement;
+import org.apache.shardingsphere.sql.parser.sql.statement.dal.dialect.mysql.ShowDatabasesStatement;
+import org.apache.shardingsphere.sql.parser.sql.statement.dal.dialect.mysql.ShowOtherStatement;
+import org.apache.shardingsphere.sql.parser.sql.statement.dal.dialect.mysql.ShowTablesStatement;
 import org.junit.Before;
 import org.junit.Test;
 
-import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.util.Collections;
+import java.util.LinkedList;
 import java.util.List;
 
 import static org.hamcrest.CoreMatchers.instanceOf;
 import static org.junit.Assert.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public final class DALMergeEngineTest {
     
-    private List<QueryResult> queryResults;
+    private List<QueryResult> queryResults = new LinkedList<>();
     
     @Before
     public void setUp() {
-        ResultSet resultSet = mock(ResultSet.class);
-        queryResults = Collections.<QueryResult>singletonList(new TestQueryResult(resultSet));
+        queryResults.add(mock(QueryResult.class));
     }
     
     @Test
     public void assertMergeForShowDatabasesStatement() throws SQLException {
         DALStatement dalStatement = new ShowDatabasesStatement();
-        DALMergeEngine dalMergeEngine = new DALMergeEngine(null, queryResults, dalStatement, null);
+        SQLStatementContext sqlStatementContext = mockSQLStatementContext(dalStatement);
+        DALMergeEngine dalMergeEngine = new DALMergeEngine(null, queryResults, sqlStatementContext, null);
         assertThat(dalMergeEngine.merge(), instanceOf(ShowDatabasesMergedResult.class));
     }
     
     @Test
     public void assertMergeForShowShowTablesStatement() throws SQLException {
         DALStatement dalStatement = new ShowTablesStatement();
-        DALMergeEngine dalMergeEngine = new DALMergeEngine(null, queryResults, dalStatement, null);
-        assertThat(dalMergeEngine.merge(), instanceOf(ShowTablesMergedResult.class));
+        SQLStatementContext sqlStatementContext = mockSQLStatementContext(dalStatement);
+        DALMergeEngine dalMergeEngine = new DALMergeEngine(null, queryResults, sqlStatementContext, null);
+        assertThat(dalMergeEngine.merge(), instanceOf(LogicTablesMergedResult.class));
     }
     
     @Test
     public void assertMergeForShowCreateTableStatement() throws SQLException {
         DALStatement dalStatement = new ShowCreateTableStatement();
-        DALMergeEngine dalMergeEngine = new DALMergeEngine(null, queryResults, dalStatement, null);
+        SQLStatementContext sqlStatementContext = mockSQLStatementContext(dalStatement);
+        DALMergeEngine dalMergeEngine = new DALMergeEngine(null, queryResults, sqlStatementContext, null);
         assertThat(dalMergeEngine.merge(), instanceOf(ShowCreateTableMergedResult.class));
     }
     
     @Test
     public void assertMergeForShowOtherStatement() throws SQLException {
         DALStatement dalStatement = new ShowOtherStatement();
-        DALMergeEngine dalMergeEngine = new DALMergeEngine(null, queryResults, dalStatement, null);
+        SQLStatementContext sqlStatementContext = mockSQLStatementContext(dalStatement);
+        DALMergeEngine dalMergeEngine = new DALMergeEngine(null, queryResults, sqlStatementContext, null);
         assertThat(dalMergeEngine.merge(), instanceOf(ShowOtherMergedResult.class));
+    }
+    
+    @Test
+    public void assertMergeForDescribeStatement() throws SQLException {
+        DALStatement dalStatement = new DescribeStatement();
+        SQLStatementContext sqlStatementContext = mockSQLStatementContext(dalStatement);
+        DALMergeEngine dalMergeEngine = new DALMergeEngine(null, queryResults, sqlStatementContext, null);
+        assertThat(dalMergeEngine.merge(), instanceOf(DescribeTableMergedResult.class));
+    }
+    
+    private SQLStatementContext mockSQLStatementContext(final DALStatement dalStatement) {
+        SQLStatementContext result = mock(SQLStatementContext.class);
+        when(result.getSqlStatement()).thenReturn(dalStatement);
+        return result;
     }
 }

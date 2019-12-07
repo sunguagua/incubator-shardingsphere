@@ -1,3 +1,64 @@
+## 4.0.0.RC3
+
+### New Features
+
+1. Sharding-UI, an orchestration management platform for ShardingSphere comes online.
+1. Not only SQLs from MySQL, PostgreSQL, SQLServer, Oracle, but any SQL92 Syntax can be parsed correctly and used in ShardingSphere.
+
+### Enhancement
+
+1. Support using less-than character(<) and greater-than character(>) for sharding data.
+1. When master and slave dataSources exist, support executing `SELECT FOR UPDATE` on master dataSource.
+1. Support hint in Sharding-Proxy.
+1. Finish parsing DAL syntax for MySQL.
+1. Make configuration of orchestration compatible between Sharding-JDBC and Sharding-Proxy.
+
+### Bug Fixes
+
+1. Through Bug fix, the feature of encryption becomes much stable and applicable.
+1. Support delete statement with alias.
+1. Check and disable updating sharding column.
+1. Fix wrong type of TINYINT and SMALLINT as INTEGER.
+
+### Refactor
+
+1. Rename optimized module to preprocessor module.
+1. Decouple rewrite core module and sharding/encrypt features.
+
+### Change Logs
+
+1. [MILESTONE](https://github.com/apache/incubator-shardingsphere/milestone/8)
+
+## 4.0.0.RC2
+
+### API Changes
+
+1. Optimize and delete API and configuration item of sharding logic index.
+1. Update the API of encryption to support the encrypted and plain data coexistence.
+
+### New Features
+
+1. Integration of Seata for distributed transaction.
+1. User can do data encryption by using ShardingProxy.
+1. User can use Leaf-segment generator to get distributed ID.
+1. Support Skywalking plugin for application performance management.
+
+### Enhancement
+
+1. Renew modified dataSources, not all the datasources to improve performance for configuration orchestration.
+1. Improve the compatibility of SQL parsing.
+
+### Refactor
+
+1. Remove DatabaseType enum, use dynamic SPI to load data source type.
+1. The parse engine upgrade from the 2nd generation to 3rd.
+1. The Refactoring of SQL rewriting module.
+
+### Change Logs
+
+1. [MILESTONE](https://github.com/apache/incubator-shardingsphere/milestone/7)
+
+
 ## 4.0.0.RC1
 
 Merge all change logs of version 3.1.0.M1, 3.1.0, 3.1.0.1 and 4.0.0.M1. First apache release.

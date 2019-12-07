@@ -17,18 +17,16 @@
 
 package org.apache.shardingsphere.core.execute.sql.execute.result;
 
-import com.google.common.base.Optional;
 import lombok.SneakyThrows;
-import org.apache.shardingsphere.core.execute.sql.execute.row.QueryRow;
-import org.apache.shardingsphere.core.rule.ShardingRule;
-import org.apache.shardingsphere.core.strategy.encrypt.ShardingEncryptorEngine;
-import org.apache.shardingsphere.spi.encrypt.ShardingEncryptor;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.ObjectOutputStream;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
+import java.sql.SQLException;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.Collection;
@@ -41,44 +39,77 @@ import java.util.List;
  *
  * @author zhangliang
  * @author panjuan
+ * @author yangyi
  */
 public final class MemoryQueryResult implements QueryResult {
     
-    private final Iterator<QueryRow> resultData;
+    private final ResultSetMetaData resultSetMetaData;
     
-    private QueryRow currentRow;
+    private final Iterator<List<Object>> rows;
     
-    private final QueryResultMetaData metaData;
+    private List<Object> currentRow;
     
-    @SneakyThrows 
-    public MemoryQueryResult(final ResultSet resultSet, final ShardingRule shardingRule, final ShardingEncryptorEngine shardingEncryptorEngine) {
-        resultData = getResultData(resultSet);
-        metaData = new QueryResultMetaData(resultSet.getMetaData(), shardingRule, shardingEncryptorEngine);
+    public MemoryQueryResult(final ResultSet resultSet) throws SQLException {
+        resultSetMetaData = resultSet.getMetaData();
+        rows = getRows(resultSet);
     }
     
-    @SneakyThrows
-    public MemoryQueryResult(final ResultSet resultSet) {
-        resultData = getResultData(resultSet);
-        metaData = new QueryResultMetaData(resultSet.getMetaData());
-    }
-        
-    @SneakyThrows
-    private Iterator<QueryRow> getResultData(final ResultSet resultSet) {
-        Collection<QueryRow> result = new LinkedList<>();
+    private Iterator<List<Object>> getRows(final ResultSet resultSet) throws SQLException {
+        Collection<List<Object>> result = new LinkedList<>();
         while (resultSet.next()) {
             List<Object> rowData = new ArrayList<>(resultSet.getMetaData().getColumnCount());
             for (int columnIndex = 1; columnIndex <= resultSet.getMetaData().getColumnCount(); columnIndex++) {
-                rowData.add(QueryResultUtil.getValue(resultSet, columnIndex));
+                rowData.add(resultSet.wasNull() ? null : getRowValue(resultSet, columnIndex));
             }
-            result.add(new QueryRow(rowData));
+            result.add(rowData);
         }
         return result.iterator();
     }
     
+    private Object getRowValue(final ResultSet resultSet, final int columnIndex) throws SQLException {
+        ResultSetMetaData metaData = resultSet.getMetaData();
+        switch (metaData.getColumnType(columnIndex)) {
+            case Types.BOOLEAN:
+                return resultSet.getBoolean(columnIndex);
+            case Types.TINYINT:
+            case Types.SMALLINT:
+                return resultSet.getInt(columnIndex);
+            case Types.INTEGER:
+                return metaData.isSigned(columnIndex) ? resultSet.getInt(columnIndex) : resultSet.getLong(columnIndex);
+            case Types.BIGINT:
+                return metaData.isSigned(columnIndex) ? resultSet.getLong(columnIndex) : resultSet.getBigDecimal(columnIndex).toBigInteger();
+            case Types.NUMERIC:
+            case Types.DECIMAL:
+                return resultSet.getBigDecimal(columnIndex);
+            case Types.FLOAT:
+            case Types.DOUBLE:
+                return resultSet.getDouble(columnIndex);
+            case Types.CHAR:
+            case Types.VARCHAR:
+            case Types.LONGVARCHAR:
+                return resultSet.getString(columnIndex);
+            case Types.DATE:
+                return resultSet.getDate(columnIndex);
+            case Types.TIME:
+                return resultSet.getTime(columnIndex);
+            case Types.TIMESTAMP:
+                return resultSet.getTimestamp(columnIndex);
+            case Types.CLOB:
+                return resultSet.getClob(columnIndex);
+            case Types.BLOB:
+            case Types.BINARY:
+            case Types.VARBINARY:
+            case Types.LONGVARBINARY:
+                return resultSet.getBlob(columnIndex);
+            default:
+                return resultSet.getObject(columnIndex);
+        }
+    }
+    
     @Override
     public boolean next() {
-        if (resultData.hasNext()) {
-            currentRow = resultData.next();
+        if (rows.hasNext()) {
+            currentRow = rows.next();
             return true;
         }
         currentRow = null;
@@ -87,32 +118,17 @@ public final class MemoryQueryResult implements QueryResult {
     
     @Override
     public Object getValue(final int columnIndex, final Class<?> type) {
-        return decrypt(columnIndex, currentRow.getColumnValue(columnIndex));
-    }
-    
-    @Override
-    public Object getValue(final String columnLabel, final Class<?> type) {
-        return decrypt(columnLabel, currentRow.getColumnValue(metaData.getColumnIndex(columnLabel)));
+        return currentRow.get(columnIndex - 1);
     }
     
     @Override
     public Object getCalendarValue(final int columnIndex, final Class<?> type, final Calendar calendar) {
-        return currentRow.getColumnValue(columnIndex);
-    }
-    
-    @Override
-    public Object getCalendarValue(final String columnLabel, final Class<?> type, final Calendar calendar) {
-        return currentRow.getColumnValue(metaData.getColumnIndex(columnLabel));
+        return currentRow.get(columnIndex - 1);
     }
     
     @Override
     public InputStream getInputStream(final int columnIndex, final String type) {
-        return getInputStream(currentRow.getColumnValue(columnIndex));
-    }
-    
-    @Override
-    public InputStream getInputStream(final String columnLabel, final String type) {
-        return getInputStream(currentRow.getColumnValue(metaData.getColumnIndex(columnLabel)));
+        return getInputStream(currentRow.get(columnIndex - 1));
     }
     
     @SneakyThrows
@@ -131,27 +147,17 @@ public final class MemoryQueryResult implements QueryResult {
     }
     
     @Override
-    public int getColumnCount() {
-        return metaData.getColumnCount();
+    public int getColumnCount() throws SQLException {
+        return resultSetMetaData.getColumnCount();
     }
     
     @Override
-    public String getColumnLabel(final int columnIndex) {
-        return metaData.getColumnLabel(columnIndex);
+    public String getColumnLabel(final int columnIndex) throws SQLException {
+        return resultSetMetaData.getColumnLabel(columnIndex);
     }
     
-    @SneakyThrows
-    private Object decrypt(final String columnLabel, final Object value) {
-        return decrypt(metaData.getColumnIndex(columnLabel), value);
-    }
-    
-    @SneakyThrows
-    private Object decrypt(final int columnIndex, final Object value) {
-        Optional<ShardingEncryptor> shardingEncryptor = metaData.getShardingEncryptor(columnIndex);
-        return shardingEncryptor.isPresent() ? shardingEncryptor.get().decrypt(getCiphertext(value)) : value;
-    }
-    
-    private String getCiphertext(final Object value) {
-        return null == value ? null : value.toString();
+    @Override
+    public boolean isCaseSensitive(final int columnIndex) throws SQLException {
+        return resultSetMetaData.isCaseSensitive(columnIndex);
     }
 }

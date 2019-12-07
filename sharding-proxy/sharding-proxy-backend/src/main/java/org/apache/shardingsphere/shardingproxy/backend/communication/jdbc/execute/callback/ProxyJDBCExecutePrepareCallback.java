@@ -19,13 +19,14 @@ package org.apache.shardingsphere.shardingproxy.backend.communication.jdbc.execu
 
 import lombok.RequiredArgsConstructor;
 import org.apache.shardingsphere.core.constant.ConnectionMode;
-import org.apache.shardingsphere.core.constant.DatabaseType;
-import org.apache.shardingsphere.core.execute.StatementExecuteUnit;
+import org.apache.shardingsphere.core.execute.sql.StatementExecuteUnit;
 import org.apache.shardingsphere.core.execute.sql.prepare.SQLExecutePrepareCallback;
 import org.apache.shardingsphere.core.route.RouteUnit;
 import org.apache.shardingsphere.shardingproxy.backend.communication.jdbc.connection.BackendConnection;
 import org.apache.shardingsphere.shardingproxy.backend.communication.jdbc.wrapper.JDBCExecutorWrapper;
 import org.apache.shardingsphere.shardingproxy.backend.schema.LogicSchemas;
+import org.apache.shardingsphere.spi.database.MySQLDatabaseType;
+import org.apache.shardingsphere.spi.database.PostgreSQLDatabaseType;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -59,9 +60,9 @@ public final class ProxyJDBCExecutePrepareCallback implements SQLExecutePrepareC
     public StatementExecuteUnit createStatementExecuteUnit(final Connection connection, final RouteUnit routeUnit, final ConnectionMode connectionMode) throws SQLException {
         Statement statement = jdbcExecutorWrapper.createStatement(connection, routeUnit.getSqlUnit(), isReturnGeneratedKeys);
         if (connectionMode.equals(ConnectionMode.MEMORY_STRICTLY)) {
-            if (DatabaseType.MySQL == LogicSchemas.getInstance().getDatabaseType()) {
+            if (LogicSchemas.getInstance().getDatabaseType() instanceof MySQLDatabaseType) {
                 statement.setFetchSize(MYSQL_MEMORY_FETCH_ONE_ROW_A_TIME);
-            } else if (DatabaseType.PostgreSQL == LogicSchemas.getInstance().getDatabaseType()) {
+            } else if (LogicSchemas.getInstance().getDatabaseType() instanceof PostgreSQLDatabaseType) {
                 statement.setFetchSize(POSTGRESQL_MEMORY_FETCH_ONE_ROW_A_TIME);
             }
         }

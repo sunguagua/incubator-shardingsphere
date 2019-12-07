@@ -58,7 +58,11 @@ public final class InlineShardingStrategy implements ShardingStrategy {
         Preconditions.checkState(shardingValue instanceof ListRouteValue, "Inline strategy cannot support range sharding.");
         Collection<String> shardingResult = doSharding((ListRouteValue) shardingValue);
         Collection<String> result = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        result.addAll(shardingResult);
+        for (String each : shardingResult) {
+            if (availableTargetNames.contains(each)) {
+                result.add(each);
+            }
+        }
         return result;
     }
     
@@ -82,7 +86,7 @@ public final class InlineShardingStrategy implements ShardingStrategy {
     private String execute(final PreciseShardingValue shardingValue) {
         Closure<?> result = closure.rehydrate(new Expando(), null, null);
         result.setResolveStrategy(Closure.DELEGATE_ONLY);
-        result.setProperty(shardingValue.getColumnName(), shardingValue.getValue());
+        result.setProperty(shardingColumn, shardingValue.getValue());
         return result.call().toString();
     }
     

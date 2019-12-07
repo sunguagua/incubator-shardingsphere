@@ -24,6 +24,7 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnitRunner;
 
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.util.Arrays;
 
 import static org.hamcrest.CoreMatchers.is;
@@ -49,10 +50,29 @@ public final class MySQLTextResultSetRowPacketTest {
     
     @Test
     public void assertWrite() {
-        MySQLTextResultSetRowPacket actual = new MySQLTextResultSetRowPacket(1, Arrays.<Object>asList(null, "value", BigDecimal.ONE, new byte[] {}));
+        long now = System.currentTimeMillis();
+        Timestamp timestamp = new Timestamp(now);
+        MySQLTextResultSetRowPacket actual = new MySQLTextResultSetRowPacket(1, Arrays.<Object>asList(null, "value", BigDecimal.ONE, new byte[] {}, timestamp));
         actual.write(payload);
         verify(payload).writeInt1(0xfb);
         verify(payload).writeStringLenenc("value");
         verify(payload).writeStringLenenc("1");
+        if (0 == timestamp.getNanos()) {
+            verify(payload).writeStringLenenc(timestamp.toString().split("\\.")[0]);
+        } else {
+            verify(payload).writeStringLenenc(timestamp.toString());
+        }
+    }
+    
+    @Test
+    public void assertTimestampWithoutNanos() {
+        long now = System.currentTimeMillis() / 1000 * 1000;
+        Timestamp timestamp = new Timestamp(now);
+        MySQLTextResultSetRowPacket actual = new MySQLTextResultSetRowPacket(1, Arrays.<Object>asList(null, "value", BigDecimal.ONE, new byte[]{}, timestamp));
+        actual.write(payload);
+        verify(payload).writeInt1(0xfb);
+        verify(payload).writeStringLenenc("value");
+        verify(payload).writeStringLenenc("1");
+        verify(payload).writeStringLenenc(timestamp.toString().split("\\.")[0]);
     }
 }

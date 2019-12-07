@@ -17,10 +17,10 @@
 
 package org.apache.shardingsphere.shardingproxy.backend.response.query;
 
+import lombok.AllArgsConstructor;
 import lombok.Getter;
-import lombok.RequiredArgsConstructor;
 import org.apache.shardingsphere.shardingproxy.backend.schema.LogicSchema;
-import org.apache.shardingsphere.shardingproxy.backend.schema.ShardingSchema;
+import org.apache.shardingsphere.shardingproxy.backend.schema.impl.ShardingSchema;
 
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
@@ -31,7 +31,7 @@ import java.util.Collection;
  *
  * @author zhangliang
  */
-@RequiredArgsConstructor
+@AllArgsConstructor
 @Getter
 public final class QueryHeader {
     
@@ -39,28 +39,66 @@ public final class QueryHeader {
     
     private final String table;
     
-    private final String columnLabel;
+    private String columnLabel;
     
-    private final String columnName;
+    private String columnName;
     
     private final int columnLength;
     
     private final Integer columnType;
     
     private final int decimals;
+
+    private final boolean signed;
+
+    private final boolean primaryKey;
+
+    private final boolean notNull;
+
+    private final boolean autoIncrement;
     
     public QueryHeader(final ResultSetMetaData resultSetMetaData, final LogicSchema logicSchema, final int columnIndex) throws SQLException {
         this.schema = logicSchema.getName();
         if (logicSchema instanceof ShardingSchema) {
-            Collection<String> tableNames = ((ShardingSchema) logicSchema).getShardingRule().getLogicTableNames(resultSetMetaData.getTableName(columnIndex));
+            Collection<String> tableNames = logicSchema.getShardingRule().getLogicTableNames(resultSetMetaData.getTableName(columnIndex));
             this.table = tableNames.isEmpty() ? "" : tableNames.iterator().next();
+            if (logicSchema.getMetaData().getTables().containsTable(resultSetMetaData.getTableName(columnIndex))) {
+                this.primaryKey = logicSchema.getMetaData().getTables().get(resultSetMetaData.getTableName(columnIndex)).getColumns()
+                        .get(resultSetMetaData.getColumnName(columnIndex).toLowerCase()).isPrimaryKey();
+                this.notNull = logicSchema.getMetaData().getTables().get(resultSetMetaData.getTableName(columnIndex)).getColumns()
+                        .get(resultSetMetaData.getColumnName(columnIndex).toLowerCase()).isNotNull();
+                this.autoIncrement = logicSchema.getMetaData().getTables().get(resultSetMetaData.getTableName(columnIndex)).getColumns()
+                        .get(resultSetMetaData.getColumnName(columnIndex).toLowerCase()).isAutoIncrement();
+            } else {
+                this.primaryKey = false;
+                this.notNull = false;
+                this.autoIncrement = false;
+            }
         } else {
             this.table = resultSetMetaData.getTableName(columnIndex);
+            this.primaryKey = false;
+            this.notNull = false;
+            this.autoIncrement = false;
         }
         this.columnLabel = resultSetMetaData.getColumnLabel(columnIndex);
         this.columnName = resultSetMetaData.getColumnName(columnIndex);
         this.columnLength = resultSetMetaData.getColumnDisplaySize(columnIndex);
         this.columnType = resultSetMetaData.getColumnType(columnIndex);
         this.decimals = resultSetMetaData.getScale(columnIndex);
+        this.signed = resultSetMetaData.isSigned(columnIndex);
+    }
+    
+    /**
+     * Set column label and column name.
+     * 
+     * @param logicColumnName logic column name
+     */
+    public void setColumnLabelAndName(final String logicColumnName) {
+        if (columnLabel.equals(columnName)) {
+            columnLabel = logicColumnName;
+            columnName = logicColumnName;
+        } else {
+            columnName = logicColumnName;
+        }
     }
 }

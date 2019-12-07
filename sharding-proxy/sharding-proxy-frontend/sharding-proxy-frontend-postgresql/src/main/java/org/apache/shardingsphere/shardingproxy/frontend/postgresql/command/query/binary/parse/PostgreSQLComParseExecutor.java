@@ -17,14 +17,9 @@
 
 package org.apache.shardingsphere.shardingproxy.frontend.postgresql.command.query.binary.parse;
 
-import org.apache.shardingsphere.core.constant.DatabaseType;
-import org.apache.shardingsphere.core.parse.ShardingSQLParseEngine;
-import org.apache.shardingsphere.core.parse.sql.statement.SQLStatement;
-import org.apache.shardingsphere.core.rule.ShardingRule;
+import org.apache.shardingsphere.sql.parser.sql.statement.SQLStatement;
 import org.apache.shardingsphere.shardingproxy.backend.communication.jdbc.connection.BackendConnection;
 import org.apache.shardingsphere.shardingproxy.backend.schema.LogicSchema;
-import org.apache.shardingsphere.shardingproxy.backend.schema.MasterSlaveSchema;
-import org.apache.shardingsphere.shardingproxy.backend.schema.ShardingSchema;
 import org.apache.shardingsphere.shardingproxy.frontend.api.CommandExecutor;
 import org.apache.shardingsphere.shardingproxy.transport.packet.DatabasePacket;
 import org.apache.shardingsphere.shardingproxy.transport.postgresql.packet.command.query.binary.BinaryStatementRegistry;
@@ -57,18 +52,10 @@ public final class PostgreSQLComParseExecutor implements CommandExecutor {
     
     @Override
     public Collection<DatabasePacket> execute() {
-        // TODO we should use none-sharding parsing engine in future.
-        ShardingSQLParseEngine shardingSQLParseEngine = new ShardingSQLParseEngine(
-                DatabaseType.PostgreSQL, getShardingRule(logicSchema), logicSchema.getMetaData().getTable(), logicSchema.getParsingResultCache());
         if (!packet.getSql().isEmpty()) {
-            SQLStatement sqlStatement = shardingSQLParseEngine.parse(packet.getSql(), true);
-            int parametersIndex = sqlStatement.getParametersIndex();
-            binaryStatementRegistry.register(packet.getStatementId(), packet.getSql(), parametersIndex, packet.getBinaryStatementParameterTypes());
+            SQLStatement sqlStatement = logicSchema.getParseEngine().parse(packet.getSql(), true);
+            binaryStatementRegistry.register(packet.getStatementId(), packet.getSql(), sqlStatement.getParametersCount(), packet.getBinaryStatementParameterTypes());
         }
         return Collections.<DatabasePacket>singletonList(new PostgreSQLParseCompletePacket());
-    }
-    
-    private ShardingRule getShardingRule(final LogicSchema logicSchema) {
-        return logicSchema instanceof MasterSlaveSchema ? ((MasterSlaveSchema) logicSchema).getDefaultShardingRule() : ((ShardingSchema) logicSchema).getShardingRule();
     }
 }

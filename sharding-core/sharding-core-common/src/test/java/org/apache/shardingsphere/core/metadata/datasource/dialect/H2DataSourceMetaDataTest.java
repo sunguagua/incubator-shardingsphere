@@ -17,39 +17,34 @@
 
 package org.apache.shardingsphere.core.metadata.datasource.dialect;
 
-import org.apache.shardingsphere.core.exception.ShardingException;
+import org.apache.shardingsphere.core.metadata.datasource.exception.UnrecognizedDatabaseURLException;
 import org.junit.Test;
 
 import static org.hamcrest.CoreMatchers.is;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertThat;
 
-public class H2DataSourceMetaDataTest {
+public final class H2DataSourceMetaDataTest {
     
     @Test
-    public void assertGetALLProperties() {
+    public void assertNewConstructorWithMem() {
         H2DataSourceMetaData actual = new H2DataSourceMetaData("jdbc:h2:mem:ds_0;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false;MODE=MySQL");
-        assertThat(actual.getHostName(), is("mem"));
+        assertThat(actual.getHostName(), is(""));
         assertThat(actual.getPort(), is(-1));
-        assertThat(actual.getSchemaName(), is("ds_0"));
+        assertThat(actual.getCatalog(), is("ds_0"));
+        assertNull(actual.getSchema());
     }
     
     @Test
-    public void assertGetPropertiesWithMinus() {
+    public void assertNewConstructorWithSymbol() {
         H2DataSourceMetaData actual = new H2DataSourceMetaData("jdbc:h2:~:ds-0;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false;MODE=MySQL");
-        assertThat(actual.getHostName(), is("~"));
+        assertThat(actual.getHostName(), is(""));
         assertThat(actual.getPort(), is(-1));
-        assertThat(actual.getSchemaName(), is("ds-0"));
+        assertNull(actual.getSchema());
     }
     
-    @Test(expected = ShardingException.class)
-    public void assertGetALLPropertiesFailure() {
+    @Test(expected = UnrecognizedDatabaseURLException.class)
+    public void assertNewConstructorFailure() {
         new H2DataSourceMetaData("jdbc:h2:file:/data/sample");
-    }
-    
-    @Test
-    public void assertIsInSameDatabaseInstance() {
-        H2DataSourceMetaData target = new H2DataSourceMetaData("jdbc:h2:~/ds_0;MODE=MYSQL");
-        H2DataSourceMetaData actual = new H2DataSourceMetaData("jdbc:h2:mem:ds_0;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false;MODE=MySQL");
-        assertThat(actual.isInSameDatabaseInstance(target), is(false));
     }
 }

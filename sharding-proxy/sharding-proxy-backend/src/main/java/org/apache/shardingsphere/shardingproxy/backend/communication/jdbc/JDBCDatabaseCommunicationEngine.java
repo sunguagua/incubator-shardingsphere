@@ -17,16 +17,13 @@
 
 package org.apache.shardingsphere.shardingproxy.backend.communication.jdbc;
 
+import com.google.common.base.Optional;
 import lombok.RequiredArgsConstructor;
-import org.apache.shardingsphere.core.constant.DatabaseType;
-import org.apache.shardingsphere.core.constant.SQLType;
+import org.apache.shardingsphere.core.constant.properties.ShardingPropertiesConstant;
 import org.apache.shardingsphere.core.merge.MergeEngineFactory;
 import org.apache.shardingsphere.core.merge.MergedResult;
-import org.apache.shardingsphere.core.merge.dal.show.ShowTablesMergedResult;
-import org.apache.shardingsphere.core.parse.constant.DerivedColumn;
-import org.apache.shardingsphere.core.parse.sql.statement.SQLStatement;
 import org.apache.shardingsphere.core.route.SQLRouteResult;
-import org.apache.shardingsphere.core.rule.ShardingRule;
+import org.apache.shardingsphere.core.rule.EncryptRule;
 import org.apache.shardingsphere.shardingproxy.backend.communication.DatabaseCommunicationEngine;
 import org.apache.shardingsphere.shardingproxy.backend.communication.jdbc.connection.BackendConnection;
 import org.apache.shardingsphere.shardingproxy.backend.communication.jdbc.connection.ConnectionStatus;
@@ -40,13 +37,19 @@ import org.apache.shardingsphere.shardingproxy.backend.response.query.QueryRespo
 import org.apache.shardingsphere.shardingproxy.backend.response.update.UpdateResponse;
 import org.apache.shardingsphere.shardingproxy.backend.schema.LogicSchema;
 import org.apache.shardingsphere.shardingproxy.backend.schema.LogicSchemas;
-import org.apache.shardingsphere.shardingproxy.backend.schema.MasterSlaveSchema;
-import org.apache.shardingsphere.shardingproxy.backend.schema.ShardingSchema;
-import org.apache.shardingsphere.shardingproxy.backend.schema.TransparentSchema;
+import org.apache.shardingsphere.shardingproxy.backend.schema.impl.EncryptSchema;
+import org.apache.shardingsphere.shardingproxy.backend.schema.impl.ShardingSchema;
+import org.apache.shardingsphere.shardingproxy.context.ShardingProxyContext;
+import org.apache.shardingsphere.spi.encrypt.ShardingEncryptor;
+import org.apache.shardingsphere.sql.parser.relation.segment.select.projection.DerivedColumn;
+import org.apache.shardingsphere.sql.parser.relation.statement.SQLStatementContext;
+import org.apache.shardingsphere.sql.parser.sql.statement.SQLStatement;
+import org.apache.shardingsphere.sql.parser.sql.statement.ddl.DDLStatement;
 import org.apache.shardingsphere.transaction.core.TransactionType;
 
 import java.sql.SQLException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedList;
 import java.util.List;
 
@@ -67,8 +70,6 @@ public final class JDBCDatabaseCommunicationEngine implements DatabaseCommunicat
     
     private final JDBCExecuteEngine executeEngine;
     
-    private final DatabaseType databaseType = LogicSchemas.getInstance().getDatabaseType();
-    
     private BackendResponse response;
     
     private MergedResult mergedResult;
@@ -76,7 +77,7 @@ public final class JDBCDatabaseCommunicationEngine implements DatabaseCommunicat
     @Override
     public BackendResponse execute() {
         try {
-            SQLRouteResult routeResult = executeEngine.getJdbcExecutorWrapper().route(sql, databaseType);
+            SQLRouteResult routeResult = executeEngine.getJdbcExecutorWrapper().route(sql);
             return execute(routeResult);
         } catch (final SQLException ex) {
             return new ErrorResponse(ex);
@@ -87,62 +88,98 @@ public final class JDBCDatabaseCommunicationEngine implements DatabaseCommunicat
         if (routeResult.getRouteUnits().isEmpty()) {
             return new UpdateResponse();
         }
-        SQLStatement sqlStatement = routeResult.getSqlStatement();
-        if (isExecuteDDLInXATransaction(sqlStatement.getType())) {
-            return new ErrorResponse(new TableModifyInTransactionException(sqlStatement.getTables().isSingleTable() ? sqlStatement.getTables().getSingleTableName() : "unknown_table"));
+        SQLStatementContext sqlStatementContext = routeResult.getSqlStatementContext();
+        if (isExecuteDDLInXATransaction(sqlStatementContext.getSqlStatement())) {
+            return new ErrorResponse(new TableModifyInTransactionException(
+                    sqlStatementContext.getTablesContext().isSingleTable() ? sqlStatementContext.getTablesContext().getSingleTableName() : "unknown_table"));
         }
         response = executeEngine.execute(routeResult);
         if (logicSchema instanceof ShardingSchema) {
-            logicSchema.refreshTableMetaData(routeResult.getSqlStatement());
+            logicSchema.refreshTableMetaData(routeResult.getSqlStatementContext());
         }
         return merge(routeResult);
     }
     
-    private boolean isExecuteDDLInXATransaction(final SQLType sqlType) {
+    private boolean isExecuteDDLInXATransaction(final SQLStatement sqlStatement) {
         BackendConnection connection = executeEngine.getBackendConnection();
-        return TransactionType.XA == connection.getTransactionType() && SQLType.DDL == sqlType && ConnectionStatus.TRANSACTION == connection.getStateHandler().getStatus();
+        return TransactionType.XA == connection.getTransactionType() && sqlStatement instanceof DDLStatement && ConnectionStatus.TRANSACTION == connection.getStateHandler().getStatus();
     }
     
     private BackendResponse merge(final SQLRouteResult routeResult) throws SQLException {
         if (response instanceof UpdateResponse) {
-            if (!isAllBroadcastTables(routeResult.getSqlStatement())) {
-                ((UpdateResponse) response).mergeUpdateCount();
-            }
+            mergeUpdateCount(routeResult);
             return response;
         }
-        mergedResult = MergeEngineFactory.newInstance(
-            databaseType, getShardingRule(), routeResult, logicSchema.getMetaData().getTable(), ((QueryResponse) response).getQueryResults()).merge();
-        if (mergedResult instanceof ShowTablesMergedResult) {
-            ((ShowTablesMergedResult) mergedResult).resetColumnLabel(logicSchema.getName());
+        setMergedResult(routeResult);
+        handleColumnsForQueryHeader(routeResult);
+        return response;
+    }
+    
+    private void mergeUpdateCount(final SQLRouteResult routeResult) {
+        if (!isAllBroadcastTables(routeResult.getSqlStatementContext())) {
+            ((UpdateResponse) response).mergeUpdateCount();
         }
-        return getQueryHeaderResponseWithoutDerivedColumns(((QueryResponse) response).getQueryHeaders());
     }
     
-    private boolean isAllBroadcastTables(final SQLStatement sqlStatement) {
-        return logicSchema instanceof ShardingSchema && ((ShardingSchema) logicSchema).getShardingRule().isAllBroadcastTables(sqlStatement.getTables().getTableNames());
+    private boolean isAllBroadcastTables(final SQLStatementContext sqlStatementContext) {
+        return logicSchema instanceof ShardingSchema && logicSchema.getShardingRule().isAllBroadcastTables(sqlStatementContext.getTablesContext().getTableNames());
     }
     
-    private ShardingRule getShardingRule() {
-        ShardingRule result;
-        if (logicSchema instanceof ShardingSchema) {
-            result = ((ShardingSchema) logicSchema).getShardingRule();
-        } else if (logicSchema instanceof MasterSlaveSchema) {
-            result = ((MasterSlaveSchema) logicSchema).getDefaultShardingRule();
-        } else {
-            result = ((TransparentSchema) logicSchema).getDefaultShardingRule();
+    private void setMergedResult(final SQLRouteResult routeResult) throws SQLException {
+        mergedResult = MergeEngineFactory.newInstance(LogicSchemas.getInstance().getDatabaseType(),
+                logicSchema.getShardingRule(), routeResult, logicSchema.getMetaData().getTables(), ((QueryResponse) response).getQueryResults()).merge();
+    }
+    
+    private void handleColumnsForQueryHeader(final SQLRouteResult routeResult) {
+        removeDerivedColumns();
+        removeAssistedQueryColumns(routeResult);
+        setLogicColumns();
+    } 
+    
+    private void removeDerivedColumns() {
+        List<QueryHeader> toRemove = new LinkedList<>();
+        List<QueryHeader> queryHeaders = ((QueryResponse) response).getQueryHeaders();
+        for (QueryHeader each : queryHeaders) {
+            if (DerivedColumn.isDerivedColumn(each.getColumnLabel())) {
+                toRemove.add(each);
+            }
+        }
+        queryHeaders.removeAll(toRemove);
+    }
+    
+    private void removeAssistedQueryColumns(final SQLRouteResult routeResult) {
+        List<QueryHeader> toRemove = new LinkedList<>();
+        List<QueryHeader> queryHeaders = ((QueryResponse) response).getQueryHeaders();
+        Collection<String> assistedQueryColumns = getAssistedQueryColumns(routeResult);
+        for (QueryHeader each : queryHeaders) {
+            if (assistedQueryColumns.contains(each.getColumnName())) {
+                toRemove.add(each);
+            }
+        }
+        queryHeaders.removeAll(toRemove);
+    }
+    
+    private Collection<String> getAssistedQueryColumns(final SQLRouteResult routeResult) {
+        Collection<String> result = new LinkedList<>();
+        EncryptRule encryptRule = getEncryptRule();
+        for (String each : routeResult.getSqlStatementContext().getTablesContext().getTableNames()) {
+            result.addAll(encryptRule.getAssistedQueryColumns(each));
         }
         return result;
     }
     
-    private QueryResponse getQueryHeaderResponseWithoutDerivedColumns(final List<QueryHeader> queryHeaders) {
-        List<QueryHeader> derivedColumnQueryHeaders = new LinkedList<>();
+    private EncryptRule getEncryptRule() {
+        return logicSchema instanceof EncryptSchema ? ((EncryptSchema) logicSchema).getEncryptRule() : logicSchema.getShardingRule().getEncryptRule();
+    }
+    
+    private void setLogicColumns() {
+        List<QueryHeader> queryHeaders = ((QueryResponse) response).getQueryHeaders();
+        EncryptRule encryptRule = getEncryptRule();
         for (QueryHeader each : queryHeaders) {
-            if (DerivedColumn.isDerivedColumn(each.getColumnLabel())) {
-                derivedColumnQueryHeaders.add(each);
+            if (encryptRule.isCipherColumn(each.getTable(), each.getColumnName())) {
+                each.setColumnLabelAndName(encryptRule.getLogicColumn(each.getTable(), each.getColumnName()));
             }
         }
-        queryHeaders.removeAll(derivedColumnQueryHeaders);
-        return new QueryResponse(queryHeaders);
     }
     
     @Override
@@ -152,12 +189,36 @@ public final class JDBCDatabaseCommunicationEngine implements DatabaseCommunicat
     
     @Override
     public QueryData getQueryData() throws SQLException {
+        Optional<EncryptRule> encryptRule = findEncryptRule();
+        boolean isQueryWithCipherColumn = ShardingProxyContext.getInstance().getShardingProperties().getValue(ShardingPropertiesConstant.QUERY_WITH_CIPHER_COLUMN);
         List<QueryHeader> queryHeaders = ((QueryResponse) response).getQueryHeaders();
         List<Object> row = new ArrayList<>(queryHeaders.size());
         for (int columnIndex = 1; columnIndex <= queryHeaders.size(); columnIndex++) {
-            row.add(mergedResult.getValue(columnIndex, Object.class));
+            Object value = mergedResult.getValue(columnIndex, Object.class);
+            if (isQueryWithCipherColumn && encryptRule.isPresent()) {
+                QueryHeader queryHeader = ((QueryResponse) response).getQueryHeaders().get(columnIndex - 1);
+                Optional<ShardingEncryptor> shardingEncryptor = encryptRule.get().findShardingEncryptor(queryHeader.getTable(), queryHeader.getColumnName());
+                if (shardingEncryptor.isPresent()) {
+                    value = shardingEncryptor.get().decrypt(getCiphertext(value));
+                }
+            }
+            row.add(value);
         }
         return new QueryData(getColumnTypes(queryHeaders), row);
+    }
+    
+    private Optional<EncryptRule> findEncryptRule() {
+        if (logicSchema instanceof ShardingSchema) {
+            return Optional.of(logicSchema.getShardingRule().getEncryptRule());
+        }
+        if (logicSchema instanceof EncryptSchema) {
+            return Optional.of(((EncryptSchema) logicSchema).getEncryptRule());
+        }
+        return Optional.absent();
+    }
+    
+    private String getCiphertext(final Object value) {
+        return null == value ? null : value.toString();
     }
     
     private List<Integer> getColumnTypes(final List<QueryHeader> queryHeaders) {

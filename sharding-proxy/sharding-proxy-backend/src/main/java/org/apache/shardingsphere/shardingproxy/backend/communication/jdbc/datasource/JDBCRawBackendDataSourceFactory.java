@@ -50,7 +50,7 @@ public final class JDBCRawBackendDataSourceFactory implements JDBCBackendDataSou
     @Override
     public DataSource build(final String dataSourceName, final YamlDataSourceParameter dataSourceParameter) {
         HikariConfig config = new HikariConfig();
-        String driverClassName = JDBCDriverURLRecognizerEngine.getDriverClassName(dataSourceParameter.getUrl());
+        String driverClassName = JDBCDriverURLRecognizerEngine.getJDBCDriverURLRecognizer(dataSourceParameter.getUrl()).getDriverClassName();
         validateDriverClassName(driverClassName);
         config.setDriverClassName(driverClassName);
         config.setJdbcUrl(dataSourceParameter.getUrl());
@@ -61,6 +61,7 @@ public final class JDBCRawBackendDataSourceFactory implements JDBCBackendDataSou
         config.setMaxLifetime(dataSourceParameter.getMaxLifetimeMilliseconds());
         config.setMaximumPoolSize(dataSourceParameter.getMaxPoolSize());
         config.setMinimumIdle(dataSourceParameter.getMinPoolSize());
+        config.setReadOnly(dataSourceParameter.isReadOnly());
         config.addDataSourceProperty("useServerPrepStmts", Boolean.TRUE.toString());
         config.addDataSourceProperty("cachePrepStmts", "true");
         config.addDataSourceProperty("prepStmtCacheSize", 250);
@@ -72,6 +73,7 @@ public final class JDBCRawBackendDataSourceFactory implements JDBCBackendDataSou
         config.addDataSourceProperty("elideSetAutoCommits", Boolean.TRUE.toString());
         config.addDataSourceProperty("maintainTimeStats", Boolean.FALSE.toString());
         config.addDataSourceProperty("netTimeoutForStreamingResults", 0);
+        config.addDataSourceProperty("tinyInt1isBit", Boolean.FALSE.toString());
         return new HikariDataSource(config);
     }
     

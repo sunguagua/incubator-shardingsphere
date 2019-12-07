@@ -17,13 +17,20 @@
 
 package org.apache.shardingsphere.transaction.xa.fixture;
 
-import com.alibaba.druid.pool.DruidDataSource;
-import com.alibaba.druid.pool.xa.DruidXADataSource;
+import com.atomikos.beans.PropertyUtils;
+import com.atomikos.jdbc.AtomikosDataSourceBean;
 import com.zaxxer.hikari.HikariDataSource;
 import lombok.NoArgsConstructor;
-import org.apache.shardingsphere.core.constant.DatabaseType;
+import lombok.SneakyThrows;
+import org.apache.shardingsphere.core.config.DatabaseAccessConfiguration;
+import org.apache.shardingsphere.spi.database.DatabaseType;
+import org.apache.shardingsphere.transaction.xa.jta.datasource.XADataSourceFactory;
+import org.apache.shardingsphere.transaction.xa.jta.datasource.properties.XADataSourceDefinition;
+import org.apache.shardingsphere.transaction.xa.jta.datasource.properties.XADataSourceDefinitionFactory;
 
 import javax.sql.DataSource;
+import javax.sql.XADataSource;
+import java.util.Properties;
 
 /**
  * Data source utility.
@@ -44,19 +51,10 @@ public final class DataSourceUtils {
     public static DataSource build(final Class<? extends DataSource> dataSourceClass, final DatabaseType databaseType, final String databaseName) {
         if (HikariDataSource.class == dataSourceClass) {
             return createHikariDataSource(databaseType, databaseName);
+        } else if (AtomikosDataSourceBean.class == dataSourceClass) {
+            return createAtomikosDataSourceBean(databaseType, databaseName);
         }
-        if (org.apache.commons.dbcp2.BasicDataSource.class == dataSourceClass) {
-            return createBasicDataSource(databaseType, databaseName);
-        }
-        if (org.apache.tomcat.dbcp.dbcp2.BasicDataSource.class == dataSourceClass) {
-            return createTomcatDataSource(databaseType, databaseName);
-        }
-        if (DruidXADataSource.class == dataSourceClass) {
-            return createDruidXADataSource(databaseType, databaseName);
-        }
-        if (DruidDataSource.class == dataSourceClass) {
-            return createDruidDataSource(databaseType, databaseName);
-        }
+        
         throw new UnsupportedOperationException(dataSourceClass.getClass().getName());
     }
     
@@ -72,71 +70,44 @@ public final class DataSourceUtils {
         return result;
     }
     
-    private static org.apache.commons.dbcp2.BasicDataSource createBasicDataSource(final DatabaseType databaseType, final String databaseName) {
-        org.apache.commons.dbcp2.BasicDataSource result = new org.apache.commons.dbcp2.BasicDataSource();
-        result.setUrl(getURL(databaseType, databaseName));
-        result.setUsername("root");
-        result.setPassword("root");
-        result.setMaxTotal(10);
-        result.setMinIdle(2);
-        result.setMaxWaitMillis(15 * 1000);
-        result.setMinEvictableIdleTimeMillis(40 * 1000);
-        result.setTimeBetweenEvictionRunsMillis(20 * 1000);
-        result.setMaxConnLifetimeMillis(500 * 1000);
+    private static AtomikosDataSourceBean createAtomikosDataSourceBean(final DatabaseType databaseType, final String databaseName) {
+        AtomikosDataSourceBean result = new AtomikosDataSourceBean();
+        result.setUniqueResourceName(databaseName);
+        result.setXaDataSource(createXADataSource(databaseType, databaseName));
         return result;
     }
     
-    private static org.apache.tomcat.dbcp.dbcp2.BasicDataSource createTomcatDataSource(final DatabaseType databaseType, final String databaseName) {
-        org.apache.tomcat.dbcp.dbcp2.BasicDataSource result = new org.apache.tomcat.dbcp.dbcp2.BasicDataSource();
-        result.setUrl(getURL(databaseType, databaseName));
-        result.setUsername("root");
-        result.setPassword("root");
-        result.setMaxTotal(10);
-        result.setMinIdle(2);
-        result.setMaxWaitMillis(15 * 1000);
-        result.setMinEvictableIdleTimeMillis(40 * 1000);
-        result.setTimeBetweenEvictionRunsMillis(20 * 1000);
-        result.setMaxConnLifetimeMillis(500 * 1000);
+    /**
+     * Get XA data source.
+     * @param databaseType database type
+     * @param databaseName database name
+     * @return XA data source
+     */
+    @SneakyThrows
+    private static XADataSource createXADataSource(final DatabaseType databaseType, final String databaseName) {
+        XADataSource result = XADataSourceFactory.build(databaseType);
+        XADataSourceDefinition xaDataSourceDefinition = XADataSourceDefinitionFactory.getXADataSourceDefinition(databaseType);
+        Properties xaProperties = xaDataSourceDefinition.getXAProperties(new DatabaseAccessConfiguration(getURL(databaseType, databaseName), "root", "root"));
+        PropertyUtils.setProperties(result, xaProperties);
         return result;
-    }
-    
-    private static DruidXADataSource createDruidXADataSource(final DatabaseType databaseType, final String databaseName) {
-        DruidXADataSource result = new DruidXADataSource();
-        configDruidDataSource(result, databaseType, databaseName);
-        return result;
-    }
-    
-    private static DruidDataSource createDruidDataSource(final DatabaseType databaseType, final String databaseName) {
-        DruidDataSource result = new DruidDataSource();
-        configDruidDataSource(result, databaseType, databaseName);
-        return result;
-    }
-    
-    private static void configDruidDataSource(final DruidDataSource druidDataSource, final DatabaseType databaseType, final String databaseName) {
-        druidDataSource.setUrl(getURL(databaseType, databaseName));
-        druidDataSource.setUsername("root");
-        druidDataSource.setPassword("root");
-        druidDataSource.setMaxActive(10);
-        druidDataSource.setMinIdle(2);
-        druidDataSource.setMaxWait(15 * 1000);
-        druidDataSource.setMinEvictableIdleTimeMillis(40 * 1000);
-        druidDataSource.setTimeBetweenEvictionRunsMillis(20 * 1000);
     }
     
     private static String getURL(final DatabaseType databaseType, final String databaseName) {
-        switch (databaseType) {
-            case H2:
-                return String.format("jdbc:h2:mem:%s;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false;MODE=MYSQL", databaseName);
-            case MySQL:
+        switch (databaseType.getName()) {
+            case "MySQL":
                 return String.format("jdbc:mysql://localhost:3306/%s", databaseName);
-            case PostgreSQL:
-                return String.format("jdbc:postgresql://localhost:3306/%s", databaseName);
-            case Oracle:
-                return String.format("jdbc:oracle:thin:@//localhost:3306/%s", databaseName);
-            case SQLServer:
+            case "MariaDB":
+                return String.format("jdbc:mariadb://localhost:3306/%s", databaseName);
+            case "PostgreSQL":
+                return String.format("jdbc:postgresql://localhost:5432/%s", databaseName);
+            case "Oracle":
+                return String.format("jdbc:oracle:thin:@//localhost:1521/%s", databaseName);
+            case "SQLServer":
                 return String.format("jdbc:sqlserver://localhost:1433;DatabaseName=%s", databaseName);
+            case "H2":
+                return String.format("jdbc:h2:mem:%s;DB_CLOSE_DELAY=-1;DATABASE_TO_UPPER=false;MODE=MYSQL", databaseName);
             default:
-                throw new UnsupportedOperationException(databaseType.name());
+                throw new UnsupportedOperationException(databaseType.getName());
         }
     }
 }

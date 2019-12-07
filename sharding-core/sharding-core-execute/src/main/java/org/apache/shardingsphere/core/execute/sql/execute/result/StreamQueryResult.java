@@ -17,22 +17,14 @@
 
 package org.apache.shardingsphere.core.execute.sql.execute.result;
 
-import com.google.common.base.Optional;
-import lombok.SneakyThrows;
-import org.apache.shardingsphere.core.rule.ShardingRule;
-import org.apache.shardingsphere.core.strategy.encrypt.ShardingEncryptorEngine;
-import org.apache.shardingsphere.spi.encrypt.ShardingEncryptor;
-
 import java.io.InputStream;
-import java.io.Reader;
 import java.math.BigDecimal;
-import java.net.URL;
 import java.sql.Blob;
 import java.sql.Clob;
 import java.sql.Date;
 import java.sql.ResultSet;
+import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
-import java.sql.SQLXML;
 import java.sql.Time;
 import java.sql.Timestamp;
 import java.util.Calendar;
@@ -42,23 +34,17 @@ import java.util.Calendar;
  *
  * @author zhangliang
  * @author panjuan
+ * @author yangyi
  */
 public final class StreamQueryResult implements QueryResult {
     
-    private final QueryResultMetaData metaData;
+    private final ResultSetMetaData resultSetMetaData;
     
     private final ResultSet resultSet;
     
-    @SneakyThrows
-    public StreamQueryResult(final ResultSet resultSet, final ShardingRule shardingRule, final ShardingEncryptorEngine shardingEncryptorEngine) {
+    public StreamQueryResult(final ResultSet resultSet) throws SQLException {
+        resultSetMetaData = resultSet.getMetaData();
         this.resultSet = resultSet;
-        metaData = new QueryResultMetaData(resultSet.getMetaData(), shardingRule, shardingEncryptorEngine);
-    }
-    
-    @SneakyThrows
-    public StreamQueryResult(final ResultSet resultSet) {
-        this.resultSet = resultSet;
-        metaData = new QueryResultMetaData(resultSet.getMetaData());
     }
     
     @Override
@@ -68,96 +54,39 @@ public final class StreamQueryResult implements QueryResult {
     
     @Override
     public Object getValue(final int columnIndex, final Class<?> type) throws SQLException {
-        Object result;
-        if (Object.class == type) {
-            result = decrypt(columnIndex, resultSet.getObject(columnIndex));
-        } else if (boolean.class == type) {
-            result = decrypt(columnIndex, resultSet.getBoolean(columnIndex));
+        if (boolean.class == type) {
+            return resultSet.getBoolean(columnIndex);
         } else if (byte.class == type) {
-            result = decrypt(columnIndex, resultSet.getByte(columnIndex));
+            return resultSet.getByte(columnIndex);
         } else if (short.class == type) {
-            result = decrypt(columnIndex, resultSet.getShort(columnIndex));
+            return resultSet.getShort(columnIndex);
         } else if (int.class == type) {
-            result = decrypt(columnIndex, resultSet.getInt(columnIndex));
+            return resultSet.getInt(columnIndex);
         } else if (long.class == type) {
-            result = decrypt(columnIndex, resultSet.getLong(columnIndex));
+            return resultSet.getLong(columnIndex);
         } else if (float.class == type) {
-            result = decrypt(columnIndex, resultSet.getFloat(columnIndex));
+            return resultSet.getFloat(columnIndex);
         } else if (double.class == type) {
-            result = decrypt(columnIndex, resultSet.getDouble(columnIndex));
+            return resultSet.getDouble(columnIndex);
         } else if (String.class == type) {
-            result = decrypt(columnIndex, resultSet.getString(columnIndex));
+            return resultSet.getString(columnIndex);
         } else if (BigDecimal.class == type) {
-            result = decrypt(columnIndex, resultSet.getBigDecimal(columnIndex));
+            return resultSet.getBigDecimal(columnIndex);
         } else if (byte[].class == type) {
-            result = resultSet.getBytes(columnIndex);
+            return resultSet.getBytes(columnIndex);
         } else if (Date.class == type) {
-            result = resultSet.getDate(columnIndex);
+            return resultSet.getDate(columnIndex);
         } else if (Time.class == type) {
-            result = resultSet.getTime(columnIndex);
+            return resultSet.getTime(columnIndex);
         } else if (Timestamp.class == type) {
-            result = resultSet.getTimestamp(columnIndex);
-        } else if (URL.class == type) {
-            result = resultSet.getURL(columnIndex);
+            return resultSet.getTimestamp(columnIndex);
         } else if (Blob.class == type) {
-            result = resultSet.getBlob(columnIndex);
+            return resultSet.getBlob(columnIndex);
         } else if (Clob.class == type) {
-            result = resultSet.getClob(columnIndex);
-        } else if (SQLXML.class == type) {
-            result = resultSet.getSQLXML(columnIndex);
-        } else if (Reader.class == type) {
-            result = resultSet.getCharacterStream(columnIndex);
+            return resultSet.getClob(columnIndex);
         } else {
-            result = decrypt(columnIndex, resultSet.getObject(columnIndex));
+            return resultSet.getObject(columnIndex);
         }
-        return result;
-    }
-    
-    @Override
-    public Object getValue(final String columnLabel, final Class<?> type) throws SQLException {
-        Object result;
-        if (Object.class == type) {
-            result = decrypt(columnLabel, resultSet.getObject(columnLabel));
-        } else if (boolean.class == type) {
-            result = decrypt(columnLabel, resultSet.getBoolean(columnLabel));
-        } else if (byte.class == type) {
-            result = decrypt(columnLabel, resultSet.getByte(columnLabel));
-        } else if (short.class == type) {
-            result = decrypt(columnLabel, resultSet.getShort(columnLabel));
-        } else if (int.class == type) {
-            result = decrypt(columnLabel, resultSet.getInt(columnLabel));
-        } else if (long.class == type) {
-            result = decrypt(columnLabel, resultSet.getLong(columnLabel));
-        } else if (float.class == type) {
-            result = decrypt(columnLabel, resultSet.getFloat(columnLabel));
-        } else if (double.class == type) {
-            result = decrypt(columnLabel, resultSet.getDouble(columnLabel));
-        } else if (String.class == type) {
-            result = decrypt(columnLabel, resultSet.getString(columnLabel));
-        } else if (BigDecimal.class == type) {
-            result = decrypt(columnLabel, resultSet.getBigDecimal(columnLabel));
-        } else if (byte[].class == type) {
-            result = resultSet.getBytes(columnLabel);
-        } else if (Date.class == type) {
-            result = resultSet.getDate(columnLabel);
-        } else if (Time.class == type) {
-            result = resultSet.getTime(columnLabel);
-        } else if (Timestamp.class == type) {
-            result = resultSet.getTimestamp(columnLabel);
-        } else if (URL.class == type) {
-            result = resultSet.getURL(columnLabel);
-        } else if (Blob.class == type) {
-            result = resultSet.getBlob(columnLabel);
-        } else if (Clob.class == type) {
-            result = resultSet.getClob(columnLabel);
-        } else if (SQLXML.class == type) {
-            result = resultSet.getSQLXML(columnLabel);
-        } else if (Reader.class == type) {
-            result = resultSet.getCharacterStream(columnLabel);
-        } else {
-            result = decrypt(columnLabel, resultSet.getObject(columnLabel));
-        }
-        return result;
     }
     
     @Override
@@ -170,20 +99,6 @@ public final class StreamQueryResult implements QueryResult {
         }
         if (Timestamp.class == type) {
             return resultSet.getTimestamp(columnIndex, calendar);
-        }
-        throw new SQLException(String.format("Unsupported type: %s", type));
-    }
-    
-    @Override
-    public Object getCalendarValue(final String columnLabel, final Class<?> type, final Calendar calendar) throws SQLException {
-        if (Date.class == type) {
-            return resultSet.getDate(columnLabel, calendar);
-        }
-        if (Time.class == type) {
-            return resultSet.getTime(columnLabel, calendar);
-        }
-        if (Timestamp.class == type) {
-            return resultSet.getTimestamp(columnLabel, calendar);
         }
         throw new SQLException(String.format("Unsupported type: %s", type));
     }
@@ -203,48 +118,23 @@ public final class StreamQueryResult implements QueryResult {
         }
     }
     
-    @SuppressWarnings("deprecation")
-    @Override
-    public InputStream getInputStream(final String columnLabel, final String type) throws SQLException {
-        switch (type) {
-            case "Ascii":
-                return resultSet.getAsciiStream(columnLabel);
-            case "Unicode":
-                return resultSet.getUnicodeStream(columnLabel);
-            case "Binary":
-                return resultSet.getBinaryStream(columnLabel);
-            default:
-                throw new SQLException(String.format("Unsupported type: %s", type));
-        }
-    }
-    
     @Override
     public boolean wasNull() throws SQLException {
         return resultSet.wasNull();
     }
     
     @Override
-    public int getColumnCount() {
-        return metaData.getColumnCount();
+    public int getColumnCount() throws SQLException {
+        return resultSetMetaData.getColumnCount();
     }
     
     @Override
-    public String getColumnLabel(final int columnIndex) {
-        return metaData.getColumnLabel(columnIndex);
+    public String getColumnLabel(final int columnIndex) throws SQLException {
+        return resultSetMetaData.getColumnLabel(columnIndex);
     }
     
-    @SneakyThrows
-    private Object decrypt(final String columnLabel, final Object value) {
-        return decrypt(metaData.getColumnIndex(columnLabel), value);
-    }
-    
-    @SneakyThrows
-    private Object decrypt(final int columnIndex, final Object value) {
-        Optional<ShardingEncryptor> shardingEncryptor = metaData.getShardingEncryptor(columnIndex);
-        return shardingEncryptor.isPresent() ? shardingEncryptor.get().decrypt(getCiphertext(value)) : value;
-    }
-    
-    private String getCiphertext(final Object value) {
-        return null == value ? null : value.toString();
+    @Override
+    public boolean isCaseSensitive(final int columnIndex) throws SQLException {
+        return resultSetMetaData.isCaseSensitive(columnIndex);
     }
 }
